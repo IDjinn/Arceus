@@ -8,7 +8,7 @@ public static class QueryExtensions
     public static SqlReader<TReturn> Query<TReturn>(
         this IDbConnection connection,
         Query query,
-        IDictionary<string, object>? parameters = null
+        Dictionary<string, object>? parameters = null
         )
     {
         parameters ??= new Dictionary<string, object>();
@@ -17,9 +17,12 @@ public static class QueryExtensions
             connection.Open();
             using var cmd = connection.CreateCommand();
             cmd.CommandText = query.Value;
-            foreach (var (key, parameter) in parameters)
+            foreach (var (key, value) in parameters)
             {
-                cmd.Parameters[key] = parameter;
+                var parameter = cmd.CreateParameter();
+                parameter.ParameterName = key;
+                parameter.Value = value;
+                cmd.Parameters.Add(parameter);
             }
 
             cmd.Prepare();

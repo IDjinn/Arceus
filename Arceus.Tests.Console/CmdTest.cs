@@ -16,7 +16,10 @@ public class CmdTest
 
     private void Try()
     {
-       var test = _dbConnection.Query<Item>("SELECT * FROM `items_base`");
+       var test = _dbConnection.Query<Item>("SELECT * FROM `items_base` WHERE `id` = @idMax",new ()
+       {
+           {"@idMax", 14}
+       });
        
        
     }
