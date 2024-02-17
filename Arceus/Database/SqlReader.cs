@@ -14,6 +14,7 @@ public class SqlReader<TResult>
     private readonly Table<TResult> _table;
 
     public IEnumerable<TResult> Data => _table._data;
+    public Table<TResult> Table => _table;
 
     public SqlReader(IDataReader reader)
     {
