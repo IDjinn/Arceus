@@ -365,6 +365,7 @@ MigrationBackup/
 
 # Generated files
 .idea/**/contentModel.xml
+*.received.*
 
 # Sensitive or high-churn files
 .idea/**/dataSources/

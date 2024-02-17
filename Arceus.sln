@@ -10,6 +10,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Arceus.Misc", "Arceus.Misc"
 		.gitignore = .gitignore
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arceus.Tests", "Arceus.Tests\Arceus.Tests.csproj", "{2DEA4460-B656-4260-B30D-E70810E40BBD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +26,9 @@ Global
 		{67B1D381-13BB-46A8-80EE-3049402F1B60}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{67B1D381-13BB-46A8-80EE-3049402F1B60}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{67B1D381-13BB-46A8-80EE-3049402F1B60}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2DEA4460-B656-4260-B30D-E70810E40BBD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2DEA4460-B656-4260-B30D-E70810E40BBD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2DEA4460-B656-4260-B30D-E70810E40BBD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2DEA4460-B656-4260-B30D-E70810E40BBD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

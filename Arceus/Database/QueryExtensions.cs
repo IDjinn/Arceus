@@ -5,34 +5,37 @@ namespace Arceus.Database;
 
 public static class QueryExtensions
 {
-    public static SqlReader<TReturn> Query<TReturn>(
-        this IDbConnection connection,
+    public static SqlReader<TReturn> Query<TReturn>(this IDbConnection connection,
         Query query,
-        Dictionary<string, object>? parameters = null
+        object? parameters = null
         )
     {
-        parameters ??= new Dictionary<string, object>();
         try
         {
             connection.Open();
             using var cmd = connection.CreateCommand();
             cmd.CommandText = query.Value;
-            foreach (var (key, value) in parameters)
-            {
-                var parameter = cmd.CreateParameter();
-                parameter.ParameterName = key;
-                parameter.Value = value;
-                cmd.Parameters.Add(parameter);
-            }
-
+            HandleQueryParameters(parameters, cmd);
             cmd.Prepare();
             return new SqlReader<TReturn>(cmd.ExecuteReader());
         }
-        catch (Exception e)
+        finally
         {
-            Console.WriteLine(e);
-            throw;
+            connection.Close();
         }
-        return default;
+    }
+
+    private static void HandleQueryParameters(object? parameters, IDbCommand cmd)
+    {
+        if (parameters is null) return;
+        
+        var properties = parameters.GetType().GetProperties();
+        foreach (var propertyInfo in properties)
+        {
+            var parameter = cmd.CreateParameter();
+            parameter.ParameterName = propertyInfo.Name;
+            parameter.Value = propertyInfo.GetValue(parameters);
+            cmd.Parameters.Add(parameter);
+        }
     }
 }
