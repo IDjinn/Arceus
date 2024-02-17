@@ -13,6 +13,8 @@ public class SqlReader<TResult>
     private readonly IDataReader _reader;
     private readonly Table<TResult> _table;
 
+    public IEnumerable<TResult> Data => _table._data;
+
     public SqlReader(IDataReader reader)
     {
         _reader = reader;
