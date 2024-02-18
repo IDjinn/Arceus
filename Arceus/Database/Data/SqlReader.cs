@@ -1,14 +1,12 @@
 ﻿using System.Data;
-using System.Dynamic;
 using System.Reflection;
-using Microsoft.Extensions.DependencyInjection;
 using Arceus.Database.Attributtes;
 using Arceus.Utils.Interfaces;
 using Arceus.Utils.Reflection;
 
-namespace Arceus.Database;
+namespace Arceus.Database.Data;
 
-public class SqlReader<TResult>
+public class SqlReader<TResult> : IDisposable
 {
     private readonly IDataReader _reader;
     private readonly Table<TResult> _table;
@@ -66,5 +64,10 @@ public class SqlReader<TResult>
                 _table._data.Add(data);
             }
         }
+    }
+
+    public void Dispose()
+    {
+        _reader.Dispose();
     }
 }

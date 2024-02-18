@@ -6,23 +6,25 @@ namespace Arceus.Tests.Console;
 
 public class CmdTest
 {
-    private IDbConnection _dbConnection;
-    public CmdTest(IDbConnection dbConnection)
+    private Arceus _arceus;
+    public CmdTest(Arceus arceus)
     {
-        _dbConnection = dbConnection;
+        _arceus = arceus;
 
         Try();
     }
 
     private void Try()
     {
-        var str = "SELECT * FROM `items_base` WHERE `id` = @idMax --";
-       var test = _dbConnection.Query<Item>(str,new 
+        var str = "UPDATE `users` SET `auth_ticket` = 'test' WHERE `id` = @Id";
+       var test = _arceus.Query<Item>(str,new 
        {
-           @idMax= 14
+           @Id= 1
        }
        );
-       
-       
+
+
+       _arceus.Commit();
+       _arceus.Rollback();
     }
 }

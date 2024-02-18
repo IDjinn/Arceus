@@ -1,6 +1,4 @@
-﻿using System.Collections.Concurrent;
-
-namespace Arceus.Database;
+﻿namespace Arceus.Database.Data;
 
 public class Table<T>
 {
@@ -8,7 +6,6 @@ public class Table<T>
     internal readonly List<string> _columns = new();
     internal readonly List<Row> _originalRows = new();
     internal readonly List<T> _data = new();
-
 
     public IReadOnlyList<string> Columns => _columns.AsReadOnly();
     public IReadOnlyList<Row> Data => _originalRows.AsReadOnly();

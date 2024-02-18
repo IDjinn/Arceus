@@ -1,6 +1,4 @@
-﻿using System.Collections.Concurrent;
-
-namespace Arceus.Database;
+﻿namespace Arceus.Database.Data;
 
 public class Row
 {

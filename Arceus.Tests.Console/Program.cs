@@ -20,8 +20,13 @@ public static class Program
             {
                 services
                     .AddSingleton<CmdTest>()
-                    .AddTransient<IDbConnection>(_ => new MySqlConnection("Server=127.0.0.1;Port=3306;Database=arc;Uid=root;Pwd=;AllowUserVariables=true;"))
-                    .AddArceus("Server=127.0.0.1;Port=3306;Database=arc;Uid=root;Pwd=;AllowUserVariables=true;");
+                    .AddArceus(() =>
+                       (IDbConnection) new MySqlConnection(
+                            "Server=127.0.0.1;Port=3306;Database=arc;Uid=root;Pwd=;AllowUserVariables=true;"));
+                
+                
+                //.AddTransient<IDbConnection>(_ => new MySqlConnection("Server=127.0.0.1;Port=3306;Database=arc;Uid=root;Pwd=;AllowUserVariables=true;"))
+                //.AddArceus("Server=127.0.0.1;Port=3306;Database=arc;Uid=root;Pwd=;AllowUserVariables=true;");
             })
             .ConfigureLogging(logger =>
             {

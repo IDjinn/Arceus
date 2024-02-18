@@ -1,4 +1,5 @@
 ﻿using System.Data;
+using Arceus.Database.Data;
 using Arceus.Utils;
 
 namespace Arceus.Database;
