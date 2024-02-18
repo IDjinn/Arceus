@@ -16,10 +16,12 @@ public class CmdTest
 
     private void Try()
     {
-       var test = _dbConnection.Query<Item>("SELECT * FROM `items_base` WHERE `id` = @idMax",new ()
+        var str = "SELECT * FROM `items_base` WHERE `id` = @idMax --";
+       var test = _dbConnection.Query<Item>(str,new 
        {
-           {"@idMax", 14}
-       });
+           @idMax= 14
+       }
+       );
        
        
     }

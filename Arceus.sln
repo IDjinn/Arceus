@@ -8,6 +8,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Arceus.Misc", "Arceus.Misc"
 	ProjectSection(SolutionItems) = preProject
 		Readme.md = Readme.md
 		.gitignore = .gitignore
+		.editorconfig = .editorconfig
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arceus.Tests", "Arceus.Tests\Arceus.Tests.csproj", "{2DEA4460-B656-4260-B30D-E70810E40BBD}"

@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using Arceus.Utils;
+using EonaCat.Sql;
 
 namespace Arceus.Database;
 
@@ -10,8 +11,15 @@ public static class QueryExtensions
         object? parameters = null
         )
     {
+        if (SqlHelper.HasSqlInjection(query.Value, out var _))
+            throw new SqlInjectionException(query.Value);
+
+        if (SqlHelper.HasJsInjection(query.Value, out _))
+            throw new JsSqlInjection(query.Value);
+        
         try
         {
+            ;
             connection.Open();
             using var cmd = connection.CreateCommand();
             cmd.CommandText = query.Value;
