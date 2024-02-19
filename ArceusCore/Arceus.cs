@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ArceusCore;
 
-public class Arceus : IAsyncDisposable
+public class Arceus : IAsyncDisposable, IDisposable
 {
     private const int MaximumFindValueDepth = 15;
 
@@ -16,6 +16,8 @@ public class Arceus : IAsyncDisposable
     private readonly IDbConnection _connection;
     private readonly IDbTransaction _transaction;
     private readonly ReflectionCache _cache;
+    private bool _wasCommitted;
+    private bool _wasRolledBack;
 
     public Arceus(ILogger<Arceus> logger, IDbConnection connection, ReflectionCache cache)
     {
@@ -29,12 +31,20 @@ public class Arceus : IAsyncDisposable
 
     public void Commit()
     {
+        if (_wasCommitted)
+            throw new InvalidOperationException("Transaction was already committed in this scope.");
+        
         _transaction.Commit();
+        _wasCommitted = true;
     }
 
     public void Rollback()
     {
+        if (_wasRolledBack)
+            throw new InvalidOperationException("Transaction was already rolled back in this scope.");
+        
         _transaction.Rollback();
+        _wasRolledBack = true;
     }
 
     public TResult? QueryFirstOrDefault<TResult>(
@@ -168,11 +178,19 @@ public class Arceus : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        _transaction.Rollback();
-        _connection.Close();
-        await CastAndDispose(_transaction);
-        await CastAndDispose(_connection);
-
+        try
+        {
+            if (!_wasCommitted && !_wasRolledBack)
+                Rollback();
+        
+            _connection.Close();
+            await CastAndDispose(_transaction);
+            await CastAndDispose(_connection);
+        }
+        finally
+        {
+            GC.SuppressFinalize(this);
+        }
         return;
 
         static async ValueTask CastAndDispose(IDisposable resource)
@@ -181,6 +199,21 @@ public class Arceus : IAsyncDisposable
                 await resourceAsyncDisposable.DisposeAsync();
             else
                 resource.Dispose();
+        }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            if (!_wasCommitted && !_wasRolledBack)
+                Rollback();
+            _transaction.Dispose();
+            _connection.Dispose();
+        }
+        finally
+        {
+            GC.SuppressFinalize(this);
         }
     }
 }

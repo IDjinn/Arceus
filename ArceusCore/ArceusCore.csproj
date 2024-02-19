@@ -4,7 +4,7 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <Version>1.0.3-alpha</Version>
+        <Version>1.0.4-alpha</Version>
         <StripSymbols>true</StripSymbols>
         <PackageId>Arceus</PackageId>
         <Authors>IDjinn</Authors>
