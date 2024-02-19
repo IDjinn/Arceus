@@ -1,8 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arceus", "Arceus\Arceus.csproj", "{8E273B70-0986-42F3-A8C2-9605E1EA5E7E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arceus.Core", "Arceus.Core\Arceus.Core.csproj", "{8E273B70-0986-42F3-A8C2-9605E1EA5E7E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arceus.Tests.Console", "Arceus.Tests.Console\Arceus.Tests.Console.csproj", "{67B1D381-13BB-46A8-80EE-3049402F1B60}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arceus.Core.Tests.Console", "Arceus.Core.Tests.Console\Arceus.Core.Tests.Console.csproj", "{67B1D381-13BB-46A8-80EE-3049402F1B60}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Arceus.Misc", "Arceus.Misc", "{27ED4FF3-D3AA-4914-9810-89065908EA08}"
 	ProjectSection(SolutionItems) = preProject
@@ -11,7 +11,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Arceus.Misc", "Arceus.Misc"
 		.editorconfig = .editorconfig
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arceus.Tests", "Arceus.Tests\Arceus.Tests.csproj", "{2DEA4460-B656-4260-B30D-E70810E40BBD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arceus.Core.Tests", "Arceus.Core.Tests\Arceus.Core.Tests.csproj", "{2DEA4460-B656-4260-B30D-E70810E40BBD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
