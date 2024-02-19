@@ -16,15 +16,13 @@ public class CmdTest
 
     private void Try()
     {
-        var str = "UPDATE `users` SET `auth_ticket` = 'test' WHERE `id` = @Id";
-       var test = _arceus.Query<Item>(str,new 
-       {
-           @Id= 1
-       }
-       );
-
-
+        var userFake = new User() { Id = 1, AuthTicket = "fake-user", IsOnline = false};
+        _arceus.Query<User>($@"
+                             UPDATE `users` SET 
+                                                `auth_ticket` = @{nameof(User.AuthTicket)}, 
+                                                `online` = @{nameof(User.IsOnline)} 
+                             WHERE `id` = @Id ",userFake);
+                             
        _arceus.Commit();
-       _arceus.Rollback();
     }
 }
