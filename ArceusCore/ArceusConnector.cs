@@ -1,11 +1,16 @@
 ﻿using System.Data;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ArceusCore;
 
-public class ArceusConnector(Func<IDbConnection> connectionAction)
+public class ArceusConnector(
+    IServiceProvider provider,
+    Func<IDbConnection> connectionAction
+    )
 {
-    public IDbConnection GetConnection()
+
+    public Arceus Connect()
     {
-        return connectionAction.Invoke();
+        return ActivatorUtilities.CreateInstance<Arceus>(provider, connectionAction.Invoke());
     }
 }
