@@ -17,7 +17,7 @@ public class UpdateTests : IClassFixture<DatabaseFixture>
     {
 
         var userFake = new User() { Id = 1, Sso = Guid.NewGuid().ToString(), IsOnline = false};
-        var updatedRows = _fixture.Database.NonQueryInternal($@"
+        var updatedRows = _fixture.Database.NonQuery($@"
                              UPDATE `users` SET 
                                                 `auth_ticket` = @{nameof(User.Sso)}, 
                                                 `online` = @{nameof(User.IsOnline)} 

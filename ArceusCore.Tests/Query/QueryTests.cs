@@ -32,4 +32,13 @@ public class QueryTests : IClassFixture<DatabaseFixture>
         Assert.Equal(RoomState.Open, room.ToList()[0].State);
         await Verify(room);
     }
+
+    [Fact]
+    public async Task query_sql_version()
+    {
+        var result = _fixture.Database.Query<string>("SELECT VERSION()").ToList();
+        Assert.NotEmpty(result);
+        Assert.NotEmpty(result[0]);
+        await Verify(result);
+    }
 }

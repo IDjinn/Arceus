@@ -68,7 +68,7 @@ public class CmdTest
 
     private void Try()
     {
-        var catalogItems =_arceus.Query<CatalogPageData>($@"SELECT * FROM `catalog_pages`");
+        var catalogItems =_arceus.Query<object>($@"SELECT VERSION()");
                              
        _arceus.Commit();
     }

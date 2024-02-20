@@ -2,8 +2,14 @@
 
 public class Row
 {
-    internal readonly List<object> _databaseValues = new();
-    internal readonly List<object> _values = new();
+    internal readonly List<object> _databaseValues ;
+    internal readonly List<object> _values;
+
+    public Row(int size)
+    {
+        _databaseValues = new List<object>(size);
+        _values = new List<object>(size);
+    }
 
     public IReadOnlyList<object> DatabaseValues => _databaseValues.AsReadOnly();
 
