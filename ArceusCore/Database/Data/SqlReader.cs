@@ -57,21 +57,21 @@ public class SqlReader<TResult> : IDisposable
                     var dbValue = _table[index, columnAttribute.Name];
                     var value = dbValue.Object?.GetType() == typeof(DBNull) ? null : dbValue.Object;
 
-                    foreach (var (_, attribute) in attributes)
-                    {
-                        if (attribute is ConverterAttribute converterAttribute)
-                        {
-                            var instance = cache.GetInstance(converterAttribute.Type);
-                            var method = cache.GetMethod(instance, nameof(IConvertible<string, string>.Parse));
-                            if (!dbValue.HasValue)
-                                throw new InvalidOperationException(nameof(dbValue));
-
-                            value = method.Invoke(instance, [dbValue.Object]);
-                        }
-                    }
-
                     try
                     {
+                        foreach (var (_, attribute) in attributes)
+                        {
+                            if (attribute is ConverterAttribute converterAttribute)
+                            {
+                                var instance = cache.GetInstance(converterAttribute.Type);
+                                var method = cache.GetMethod(instance, nameof(IConvertible<string, string>.Parse));
+                                if (!dbValue.HasValue)
+                                    throw new InvalidOperationException(nameof(dbValue));
+
+                                value = method.Invoke(instance, [dbValue.Object]);
+                            }
+                        }
+
                         propertyInfo.SetValue(data, value);
                     }
                     catch (ArgumentException argumentException)
@@ -79,7 +79,8 @@ public class SqlReader<TResult> : IDisposable
 #if __CONVERT_TYPE_WITH_RUNTIME__
                         try
                         {
-                            value = Convert.ChangeType(value, propertyInfo.PropertyType); // this method is very expensive
+                            value =
+ Convert.ChangeType(value, propertyInfo.PropertyType); // this method is very expensive
                         }
                         catch
                         {
@@ -88,8 +89,9 @@ public class SqlReader<TResult> : IDisposable
                                 data, propertyName, argumentException);
                         }
 #else
-                            throw new InvalidConversionException($"Could not convert '{value}' to property '{propertyName}' of '{data}'. Expected type is '{propertyInfo.PropertyType}' got {value?.GetType()}",
-                                data, propertyName, argumentException);
+                        throw new InvalidConversionException(
+                            $"Could not convert '{value}' to property '{propertyName}' of '{data}'. Expected type is '{propertyInfo.PropertyType}' got {value?.GetType()}",
+                            data, propertyName, argumentException);
 #endif
                     }
                     catch (TargetException targetException)
