@@ -55,7 +55,7 @@ public class SqlReader<TResult> : IDisposable
 
                     var propertyInfo = cache.GetPropertyInfo(typeof(TResult), propertyName);
                     var dbValue = _table[index, columnAttribute.Name];
-                    var value = dbValue.Object;
+                    var value = dbValue.Object?.GetType() == typeof(DBNull) ? null : dbValue.Object;
 
                     foreach (var (_, attribute) in attributes)
                     {
