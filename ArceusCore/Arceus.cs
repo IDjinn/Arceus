@@ -15,14 +15,16 @@ public class Arceus : IAsyncDisposable, IDisposable
     private readonly ILogger<Arceus> _logger;
     private readonly IDbConnection _connection;
     private readonly IDbTransaction _transaction;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ReflectionCache _cache;
     private bool _wasCommitted;
     private bool _wasRolledBack;
 
-    public Arceus(ILogger<Arceus> logger, IDbConnection connection, ReflectionCache cache)
+    public Arceus(ILogger<Arceus> logger, IDbConnection connection, IServiceProvider serviceProvider, ReflectionCache cache)
     {
         _logger = logger;
         _connection = connection;
+        _serviceProvider = serviceProvider;
         _cache = cache;
 
         _connection.Open();
@@ -49,26 +51,26 @@ public class Arceus : IAsyncDisposable, IDisposable
 
     public TResult QuerySingle<TResult>(
         Query query,
-        object? parameters = null
+        Record<TResult> record = default
     )
     {
-        return __query_internal<TResult>(query, parameters, CommandBehavior.SingleRow).Single();
+        return __query_internal(query, record, CommandBehavior.SingleRow).Single();
     }
     
     public TResult? QueryFirstOrDefault<TResult>(
         Query query,
-        object? parameters = null
+        Record<TResult> record = default
     )
     {
-        return __query_internal<TResult>(query, parameters, CommandBehavior.SingleRow).FirstOrDefault();
+        return __query_internal(query, record, CommandBehavior.SingleRow).FirstOrDefault();
     }
 
     public IEnumerable<TResult> Query<TResult>(
         Query query,
-        object? parameters = null
+        Record<TResult> record = default
     )
     {
-        return __query_internal<TResult>(query, parameters);
+        return __query_internal(query, record);
     }
 
     public int NonQuery(
@@ -84,7 +86,7 @@ public class Arceus : IAsyncDisposable, IDisposable
         CommandBehavior behavior = CommandBehavior.Default)
     {
         using var cmd = _transaction.Connection!.CreateCommand();
-        cmd.CommandText = query.Value;
+        cmd.CommandText = query.QueryString;
         HandleQueryParameters(parameters, cmd);
         cmd.Prepare();
         return cmd.ExecuteNonQuery();
@@ -93,7 +95,7 @@ public class Arceus : IAsyncDisposable, IDisposable
 
     private IEnumerable<TResult> __query_internal<TResult>(
         Query query,
-        object? parameters = null,
+        Record<TResult> record = default,
         CommandBehavior behavior = CommandBehavior.Default
     )
     {
@@ -101,11 +103,11 @@ public class Arceus : IAsyncDisposable, IDisposable
         try
         {
             using var cmd = _transaction.Connection!.CreateCommand();
-            cmd.CommandText = query.Value;
-            HandleQueryParameters(parameters, cmd);
+            cmd.CommandText = query.QueryString;
+            HandleQueryParameters(query.Parameters, cmd);
             cmd.Prepare();
 
-            reader = new SqlReader<TResult>(cmd.ExecuteReader(behavior), _cache);
+            reader = new SqlReader<TResult>(cmd.ExecuteReader(behavior), _serviceProvider,  query, record);
             return reader.Data;
         }
         finally
@@ -128,6 +130,15 @@ public class Arceus : IAsyncDisposable, IDisposable
         if (obj is null) return;
         if (depth++ >= MaximumFindValueDepth) return;
 
+        if (obj is object[] array)
+        {
+            foreach (var item in array)
+            {
+                HandleQueryParameters(item, cmd, depth);
+            }
+            return;
+        }
+        
         var objectType = obj.GetType();
         foreach (var (propertyName, propertyInfo) in _cache.GetPropertiesOf(objectType))
         {

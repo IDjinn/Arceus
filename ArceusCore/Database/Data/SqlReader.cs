@@ -1,9 +1,12 @@
 ﻿// #define __CONVERT_TYPE_WITH_RUNTIME__
 using System.Data;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using ArceusCore.Database.Attributtes;
+using ArceusCore.Utils;
 using ArceusCore.Utils.Interfaces;
 using ArceusCore.Utils.Reflection;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ArceusCore.Database.Data;
 
@@ -17,8 +20,12 @@ public class InvalidConversionException(string message, object? value, object ta
 
 public class SqlReader<TResult> : IDisposable
 {
+    private readonly IServiceProvider _serviceProvider;
+    private readonly Query _query;
+    private readonly Record<TResult>? _record;
     private readonly IDataReader _reader;
     private readonly Table<TResult> _table;
+    private readonly ReflectionCache _cache;
 
     public ICollection<TResult> Data
     {
@@ -32,9 +39,18 @@ public class SqlReader<TResult> : IDisposable
     }
     public Table<TResult> Table => _table;
 
-    public SqlReader(IDataReader reader, ReflectionCache cache)
+    public SqlReader(
+        IDataReader reader, 
+        IServiceProvider serviceProvider,
+        Query query,
+        Record<TResult>? record
+        )
     {
         _reader = reader;
+        _serviceProvider = serviceProvider;
+        _query = query;
+        _record = record;
+        _cache = serviceProvider.GetRequiredService<ReflectionCache>();
         _table = new Table<TResult>(reader.FieldCount);
 
         for (var i = 0; i < reader.FieldCount; i++)
@@ -58,7 +74,7 @@ public class SqlReader<TResult> : IDisposable
 
         if (typeof(TResult).GetCustomAttribute<TableAttribute>() is not { } tableAttribute) return;
         
-        var propertiesWithColumn = cache.GetPropertiesAttributes(typeof(TResult));
+        var propertiesWithColumn = _cache.GetPropertiesAttributes(typeof(TResult));
         var index = 0;
         while (reader.Read())
         {
@@ -67,7 +83,7 @@ public class SqlReader<TResult> : IDisposable
                 row._databaseValues.Add(reader.GetValue(i));
 
             _table._originalRows.Add(row);
-            var data = Activator.CreateInstance<TResult>();
+            var data = CreateInstanceOf<TResult>();
             foreach (var (propertyName, attributes) in propertiesWithColumn)
             {
                 // if we dont have column attribute we just skip this property.
@@ -76,7 +92,7 @@ public class SqlReader<TResult> : IDisposable
                     continue;
 
                 var dbValue = _table[index, columnAttribute.Name];
-                var propertyInfo = cache.GetPropertyInfo(typeof(TResult), propertyName);
+                var propertyInfo = _cache.GetPropertyInfo(typeof(TResult), propertyName);
                 var value = dbValue.Object?.GetType() == typeof(DBNull) ? null : dbValue.Object;
                 try
                 {
@@ -85,8 +101,8 @@ public class SqlReader<TResult> : IDisposable
                         if (attribute is not ConverterAttribute converterAttribute) 
                             continue;
                         
-                        var instance = cache.GetInstance(converterAttribute.Type);
-                        var method = cache.GetMethod(instance, nameof(IConvertible<string, string>.Parse));
+                        var instance = _cache.GetInstance(converterAttribute.Type);
+                        var method = _cache.GetMethod(instance, nameof(IConvertible<string, string>.Parse));
                         if (!dbValue.HasValue) // TODO: if dbvalue is DBNull maybe throw exception
                             throw new InvalidOperationException(nameof(dbValue));
 
@@ -129,6 +145,31 @@ public class SqlReader<TResult> : IDisposable
 
             _table._data.Add(data);
             index++;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    private T CreateInstanceOf<T>()
+    {
+        try
+        {
+            var instanceType = _serviceProvider.GetService<T>();
+            if (_record.HasValue)
+                return (T)ActivatorUtilities.CreateInstance(_serviceProvider,instanceType!.GetType(), _record.Value.AdditionalParameters);
+            return (T)ActivatorUtilities.CreateInstance(_serviceProvider,instanceType!.GetType());
+        }
+        catch
+        {
+            // ignored
+        }
+
+        try // handles interfaces type or instance registered in DI container
+        {
+            return (T)_serviceProvider.GetRequiredService(typeof(T));
+        }
+        catch // otherwise, just the class instance
+        {
+            return Activator.CreateInstance<T>();
         }
     }
 
