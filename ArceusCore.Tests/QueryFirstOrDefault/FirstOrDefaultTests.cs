@@ -15,7 +15,7 @@ public class FirstOrDefaultTests : IClassFixture<DatabaseFixture>
     [Fact]
     public async Task query_first_or_default()
     {
-        var room = _fixture.Database.QueryFirstOrDefault<Room>(new ("SELECT * FROM `rooms` WHERE `id` = @Id LIMIT 1",[new { Id = 50 }]));
+        var room = await _fixture.Database.QueryFirstOrDefault<Room>(new ("SELECT * FROM `rooms` WHERE `id` = @Id LIMIT 1",[new { Id = 50 }]));
         Assert.NotNull(room);
         Assert.Equal(RoomState.Open, room!.State);
         await Verify(room);

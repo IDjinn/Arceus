@@ -1,19 +1,23 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using ArceusCore.Database.Attributtes;
 using ArceusCore.Tests.Console.Entities;
 using ArceusCore.Utils;
 using ArceusCore.Utils.Interfaces;
 using ArceusCore.Utils.Parsers;
+using Microsoft.Extensions.Logging;
 
 namespace ArceusCore.Tests.Console;
 
 public class CmdTest
 {
-    private Arceus _arceus;
+    private readonly Arceus _arceus;
+    private readonly ILogger<CmdTest> _logger;
 
-    public CmdTest(Arceus arceus)
+    public CmdTest(Arceus arceus, ILogger<CmdTest> logger)
     {
         _arceus = arceus;
+        _logger = logger;
 
         Try();
     }
@@ -113,17 +117,20 @@ public class CmdTest
         public bool ClubOnly { get; init; }
     }
 
-    private void Try()
+    private async Task Try()
     {
-        var sw = Stopwatch.StartNew();
-        var catalogItems = _arceus.Query(
+        using var perfMonitor = new PerformanceMonitor(_logger);
+        var sqlReader = await _arceus.Query(
             $@"SELECT * from `catalog_items`",
-            new Record<ICatalogItemData>(
-                ["something_test", new ComplexObjectTest("Luke")]
-            ));
-        
-        sw.Stop();
-        
-        _arceus.Commit();
+            () => new CatalogItemData("something_test", new ComplexObjectTest("Luke"))
+            );
+        var items = new ConcurrentBag<ICatalogItemData>();
+        foreach (var catalogItem in sqlReader)
+        {
+            items.Add(catalogItem);
+        }
+
+        var elapsed = perfMonitor.Elapsed();
+        perfMonitor.Lap("end");
     }
 }

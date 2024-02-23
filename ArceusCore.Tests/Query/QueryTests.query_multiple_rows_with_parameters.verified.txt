@@ -1,7 +1,5 @@
-﻿[
-  {
-    Id: 50,
-    Name: Dark Elegant Bundle,
-    State: Open
-  }
-]
+﻿{
+  Id: 50,
+  Name: Dark Elegant Bundle,
+  State: Open
+}

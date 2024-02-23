@@ -1,4 +1,6 @@
 ﻿// #define __CONVERT_TYPE_WITH_RUNTIME__
+
+using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using System.Reflection;
@@ -20,95 +22,60 @@ public class InvalidConversionException(string message, object? value, object ta
     public Exception Exception { get; init;} = exception;
 }
 
-public class SqlReader<TResult> : IDisposable
+public class SqlReader<TResult> 
+    where TResult : new()
 {
     private readonly ILogger<SqlReader<TResult>> _logger;
-    private readonly IServiceProvider _serviceProvider;
-    private readonly Query _query;
-    private readonly Record<TResult>? _record;
-    private readonly IDataReader _reader;
+    private readonly DbDataReader _reader;
+    private readonly Func<TResult> _factory;
     private readonly Table<TResult> _table;
     private readonly ReflectionCache _cache;
-    private Type _instanceType;
-    private TResult? _genericInstance;
 
-    public ICollection<TResult> Data
-    {
-        get
-        {
-            if (_table._data.Count > 0)
-                return _table._data;
-
-            return _table._originalRows[0]._databaseValues.Cast<TResult>().ToList();
-        }
-    }
+    public ICollection<TResult> Data => new List<TResult>();
     public Table<TResult> Table => _table;
 
-    public SqlReader(
-        DbDataReader reader, 
-        IServiceProvider serviceProvider,
+    public SqlReader(IServiceProvider serviceProvider,
+        DbDataReader _reader,
         Query query,
-        Record<TResult>? record
-        )
+        Func<TResult> factory)
     {
-        _reader = reader;
-        _serviceProvider = serviceProvider;
         _logger = serviceProvider.GetRequiredService<ILogger<SqlReader<TResult>>>();
-        _query = query;
-        _record = record;
+        this._reader = _reader;
+        _factory = factory;
         _cache = serviceProvider.GetRequiredService<ReflectionCache>();
-        _table = new Table<TResult>(reader.FieldCount);
-
-        using var perfMonitor = new PerformanceMonitor(_logger);
-        for (var i = 0; i < reader.FieldCount; i++)
-        {
-            _table._columns.Add(reader.GetName(i));
-        }
-        perfMonitor.Lap("columns");
+        _table = new Table<TResult>(100);
         
-
-        if (typeof(TResult).IsPrimitive 
-            || typeof(TResult) == typeof(string)
-            || typeof(TResult) == typeof(object))
+        for (var i = 0; i < _reader.FieldCount; i++)
         {
-            while (reader.Read())
+            _table.AddColumn(_reader.GetName(i));
+        }
+        
+        while (_reader.Read())
+        {
+            var row = new Row(_reader.FieldCount);
+            for (var i = 0; i < _reader.FieldCount; i++)
             {
-                var row = new Row(reader.FieldCount);
-                for (var i = 0; i < reader.FieldCount; i++)
-                    row._databaseValues.Add(reader.GetValue(i));
-
-                _table._originalRows.Add(row);
+                var value = _reader.GetValue(i);
+                row._databaseValues.Add(value);
             }
-            perfMonitor.Lap("primitive");
+            _table.AddRow(row);
         }
+        
+        _reader.Dispose();
+    }
 
-        if (typeof(TResult).GetCustomAttribute<TableAttribute>() is not { } tableAttribute) return;
-        perfMonitor.Lap("table-attribute");
-
-        try
-        {
-            _genericInstance = _serviceProvider.GetService<TResult>();
-            perfMonitor.Lap("get-instance-type");
-        }
-        catch
-        {
-            // ignored
-        }
+    public IEnumerable<TResult> ReadEnumerable()
+    {
+        if (typeof(TResult).GetCustomAttribute<TableAttribute>() is not { } tableAttribute)
+            yield break;
 
         var propertiesWithColumn = _cache.GetPropertiesAttributes(typeof(TResult));
-        perfMonitor.Lap("get-properties");
-        var index = 0;
-        while (reader.Read())
-        {
-            perfMonitor.Lap("read-offset-" + index);
-            var row = new Row(reader.FieldCount);
-            for (var i = 0; i < reader.FieldCount; i++)
-                row._databaseValues.Add(reader.GetValue(i));
+        var columns = _table.Columns.ToList();
 
-            _table._originalRows.Add(row);
-            perfMonitor.Lap("add-row-"+index);
-            var data = CreateInstanceOf<TResult>();
-            perfMonitor.Lap("instance-of-"+index);
+
+        foreach (var row in _table.Rows)
+        {
+            var data = _factory();
             foreach (var (propertyName, attributes) in propertiesWithColumn)
             {
                 // if we dont have column attribute we just skip this property.
@@ -116,16 +83,16 @@ public class SqlReader<TResult> : IDisposable
                     foundAttribute is not ColumnAttribute columnAttribute)
                     continue;
 
-                var dbValue = _table[index, columnAttribute.Name];
+                var dbValue = row[columns.IndexOf(columnAttribute.Name)];
                 var propertyInfo = _cache.GetPropertyInfo(typeof(TResult), propertyName);
                 var value = dbValue.Object?.GetType() == typeof(DBNull) ? null : dbValue.Object;
                 try
                 {
                     foreach (var (_, attribute) in attributes)
                     {
-                        if (attribute is not ConverterAttribute converterAttribute) 
+                        if (attribute is not ConverterAttribute converterAttribute)
                             continue;
-                        
+
                         var instance = _cache.GetInstance(converterAttribute.Type);
                         var method = _cache.GetMethod(instance, nameof(IConvertible<string, string>.Parse));
                         if (!dbValue.HasValue) // TODO: if dbvalue is DBNull maybe throw exception
@@ -133,8 +100,8 @@ public class SqlReader<TResult> : IDisposable
 
                         value = method.Invoke(instance, [dbValue.Object]);
                     }
+
                     propertyInfo.SetValue(data, value);
-                    perfMonitor.Lap("property-"+propertyName+"-row-"+index);
                 }
                 catch (ArgumentException argumentException)
                 {
@@ -162,52 +129,10 @@ public class SqlReader<TResult> : IDisposable
                         $"Could not convert '{data}' to property '{propertyName}'. Expected type is '{propertyInfo.PropertyType}' got {value?.GetType()}",
                         data, propertyName, targetException);
                 }
-                catch (Exception exception)
-                {
-                    throw;
-                }
             }
 
-            _table._data.Add(data);
-            index++;
-        }                    
-        perfMonitor.Lap("end");
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private T CreateInstanceOf<T>()
-    {
-        try
-        {
-            var parameters = _record.HasValue ? _record.Value.AdditionalParameters : [];
-            return (T)ActivatorUtilities.CreateInstance(_serviceProvider, _instanceType, parameters);
+            _table.AddData(data);
+            yield return data;
         }
-        catch (InvalidOperationException invalidOperationException)
-        {
-            throw new InvalidOperationException(
-                $"""A valid constructor in type '{typeof(T).FullName}' with constructor arguments [{
-                    (_record.HasValue
-                        ? string.Join(", ", _record.Value.AdditionalParameters.Select(param => param?.GetType().FullName ?? "null"))
-                        : string.Empty
-                    )}] couldn't be found""");
-        }
-        catch (Exception e)
-        {
-            // _logger.LogError(e, "Creating instance of '{Type}' resulted in exception: {Message}", typeof(T).FullName, e.Message);
-        }
-
-        try // handles interfaces type or instance registered in DI container
-        {
-            return (T)_serviceProvider.GetRequiredService(typeof(T));
-        }
-        catch // otherwise, just the class instance
-        {
-            return Activator.CreateInstance<T>();
-        }
-    }
-
-    public void Dispose()
-    {
-        _reader.Dispose();
     }
 }

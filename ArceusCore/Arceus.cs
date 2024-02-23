@@ -1,4 +1,5 @@
 ﻿using System.Data;
+using System.Data.Common;
 using ArceusCore.Database.Attributtes;
 using ArceusCore.Database.Data;
 using ArceusCore.Utils;
@@ -13,14 +14,14 @@ public class Arceus : IAsyncDisposable, IDisposable
     private const int MaximumFindValueDepth = 15;
 
     private readonly ILogger<Arceus> _logger;
-    private readonly IDbConnection _connection;
-    private readonly IDbTransaction _transaction;
+    private readonly DbConnection _connection;
+    private readonly DbTransaction _transaction;
     private readonly IServiceProvider _serviceProvider;
     private readonly ReflectionCache _cache;
     private bool _wasCommitted;
     private bool _wasRolledBack;
 
-    public Arceus(ILogger<Arceus> logger, IDbConnection connection, IServiceProvider serviceProvider, ReflectionCache cache)
+    public Arceus(ILogger<Arceus> logger, DbConnection connection, IServiceProvider serviceProvider, ReflectionCache cache)
     {
         _logger = logger;
         _connection = connection;
@@ -49,31 +50,31 @@ public class Arceus : IAsyncDisposable, IDisposable
         _wasRolledBack = true;
     }
 
-    public TResult QuerySingle<TResult>(
+    public async Task<TResult> QuerySingle<TResult>(
         Query query,
-        Record<TResult> record = default
-    )
+        Func<TResult>? factory =null
+    )where TResult : new()
     {
-        return __query_internal(query, record, CommandBehavior.SingleRow).Single();
+        return (await __query_internal(query, factory, CommandBehavior.SingleRow)).Single();
     }
     
-    public TResult? QueryFirstOrDefault<TResult>(
+    public async ValueTask<TResult?> QueryFirstOrDefault<TResult>(
         Query query,
-        Record<TResult> record = default
-    )
+        Func<TResult>? factory =null
+    )where TResult : new()
     {
-        return __query_internal(query, record, CommandBehavior.SingleRow).FirstOrDefault();
+        return (await __query_internal(query, factory, CommandBehavior.SingleRow)).FirstOrDefault();
     }
 
-    public IEnumerable<TResult> Query<TResult>(
+    public Task<IEnumerable<TResult>> Query<TResult>(
         Query query,
-        Record<TResult> record = default
-    )
+        Func<TResult>? factory =null
+    )where TResult : new()
     {
-        return __query_internal(query, record);
+        return __query_internal(query, factory);
     }
 
-    public int NonQuery(
+    public Task<int> NonQuery(
         Query query,
         object? parameters = null
     )
@@ -81,39 +82,34 @@ public class Arceus : IAsyncDisposable, IDisposable
         return __non_query_internal(query, parameters);
     }
 
-    private int __non_query_internal(Query query,
+    private async Task<int> __non_query_internal(Query query,
         object? parameters = null,
         CommandBehavior behavior = CommandBehavior.Default)
     {
-        using var cmd = _transaction.Connection!.CreateCommand();
+        await using var cmd = _transaction.Connection!.CreateCommand();
         cmd.CommandText = query.QueryString;
         HandleQueryParameters(parameters, cmd);
-        cmd.Prepare();
-        return cmd.ExecuteNonQuery();
+        await cmd.PrepareAsync();
+        return await cmd.ExecuteNonQueryAsync();
     }
 
 
-    private IEnumerable<TResult> __query_internal<TResult>(
+    public async Task<IEnumerable<TResult>> __query_internal<TResult>(
         Query query,
-        Record<TResult> record = default,
+        Func<TResult>? factory = null,
         CommandBehavior behavior = CommandBehavior.Default
-    )
+    ) where TResult : new()
     {
-        SqlReader<TResult>? reader = null;
-        try
-        {
-            using var cmd = _transaction.Connection!.CreateCommand();
-            cmd.CommandText = query.QueryString;
-            HandleQueryParameters(query.Parameters, cmd);
-            cmd.Prepare();
+        factory ??= ()=> new TResult();
+        
+        await using var cmd = _transaction.Connection!.CreateCommand();
+        cmd.CommandText = query.QueryString;
+        HandleQueryParameters(query.Parameters, cmd);
+        await cmd.PrepareAsync();
 
-            reader = new SqlReader<TResult>(cmd.ExecuteReader(behavior), _serviceProvider,  query, record);
-            return reader.Data;
-        }
-        finally
-        {
-            reader?.Dispose();
-        }
+        var reader = await cmd.ExecuteReaderAsync(behavior);
+        return new SqlReader<TResult>(_serviceProvider,reader, query, factory)
+            .ReadEnumerable();
     }
 // public ValueTask<IEnumerable<TResult>> QueryAsync<TResult>(
 //     Query query,
@@ -201,7 +197,7 @@ public class Arceus : IAsyncDisposable, IDisposable
             if (!_wasCommitted && !_wasRolledBack)
                 Rollback();
         
-            _connection.Close();
+            await _connection.CloseAsync();
             await CastAndDispose(_transaction);
             await CastAndDispose(_connection);
         }
