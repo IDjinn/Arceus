@@ -6,15 +6,20 @@ using MySql.Data.MySqlClient;
 
 namespace ArceusCore.Tests.Console;
 
-
 public static class Program
 {
     public static void Main(string[] args)
     {
         var builder = Host.CreateDefaultBuilder()
+            .ConfigureLogging(logger =>
+            {
+                logger.AddConsole();
+                logger.SetMinimumLevel(LogLevel.Debug);
+            })
             .ConfigureServices(services =>
             {
                 services
+                    .AddTransient<CmdTest.ICatalogItemData, CmdTest.CatalogItemData>()
                     .AddSingleton<CmdTest>()
                     .AddArceus(() => new MySqlConnection(
                             "Server=127.0.0.1;Port=3306;Database=arc;Uid=root;Pwd=;AllowUserVariables=true;"));

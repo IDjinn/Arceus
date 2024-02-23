@@ -1,5 +1,6 @@
 ﻿// #define __CONVERT_TYPE_WITH_RUNTIME__
 using System.Data;
+using System.Data.Common;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using ArceusCore.Database.Attributtes;
@@ -7,6 +8,7 @@ using ArceusCore.Utils;
 using ArceusCore.Utils.Interfaces;
 using ArceusCore.Utils.Reflection;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace ArceusCore.Database.Data;
 
@@ -20,12 +22,15 @@ public class InvalidConversionException(string message, object? value, object ta
 
 public class SqlReader<TResult> : IDisposable
 {
+    private readonly ILogger<SqlReader<TResult>> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly Query _query;
     private readonly Record<TResult>? _record;
     private readonly IDataReader _reader;
     private readonly Table<TResult> _table;
     private readonly ReflectionCache _cache;
+    private Type _instanceType;
+    private TResult? _genericInstance;
 
     public ICollection<TResult> Data
     {
@@ -40,7 +45,7 @@ public class SqlReader<TResult> : IDisposable
     public Table<TResult> Table => _table;
 
     public SqlReader(
-        IDataReader reader, 
+        DbDataReader reader, 
         IServiceProvider serviceProvider,
         Query query,
         Record<TResult>? record
@@ -48,15 +53,19 @@ public class SqlReader<TResult> : IDisposable
     {
         _reader = reader;
         _serviceProvider = serviceProvider;
+        _logger = serviceProvider.GetRequiredService<ILogger<SqlReader<TResult>>>();
         _query = query;
         _record = record;
         _cache = serviceProvider.GetRequiredService<ReflectionCache>();
         _table = new Table<TResult>(reader.FieldCount);
 
+        using var perfMonitor = new PerformanceMonitor(_logger);
         for (var i = 0; i < reader.FieldCount; i++)
         {
             _table._columns.Add(reader.GetName(i));
         }
+        perfMonitor.Lap("columns");
+        
 
         if (typeof(TResult).IsPrimitive 
             || typeof(TResult) == typeof(string)
@@ -70,20 +79,36 @@ public class SqlReader<TResult> : IDisposable
 
                 _table._originalRows.Add(row);
             }
+            perfMonitor.Lap("primitive");
         }
 
         if (typeof(TResult).GetCustomAttribute<TableAttribute>() is not { } tableAttribute) return;
-        
+        perfMonitor.Lap("table-attribute");
+
+        try
+        {
+            _genericInstance = _serviceProvider.GetService<TResult>();
+            perfMonitor.Lap("get-instance-type");
+        }
+        catch
+        {
+            // ignored
+        }
+
         var propertiesWithColumn = _cache.GetPropertiesAttributes(typeof(TResult));
+        perfMonitor.Lap("get-properties");
         var index = 0;
         while (reader.Read())
         {
+            perfMonitor.Lap("read-offset-" + index);
             var row = new Row(reader.FieldCount);
             for (var i = 0; i < reader.FieldCount; i++)
                 row._databaseValues.Add(reader.GetValue(i));
 
             _table._originalRows.Add(row);
+            perfMonitor.Lap("add-row-"+index);
             var data = CreateInstanceOf<TResult>();
+            perfMonitor.Lap("instance-of-"+index);
             foreach (var (propertyName, attributes) in propertiesWithColumn)
             {
                 // if we dont have column attribute we just skip this property.
@@ -108,8 +133,8 @@ public class SqlReader<TResult> : IDisposable
 
                         value = method.Invoke(instance, [dbValue.Object]);
                     }
-
                     propertyInfo.SetValue(data, value);
+                    perfMonitor.Lap("property-"+propertyName+"-row-"+index);
                 }
                 catch (ArgumentException argumentException)
                 {
@@ -145,22 +170,30 @@ public class SqlReader<TResult> : IDisposable
 
             _table._data.Add(data);
             index++;
-        }
+        }                    
+        perfMonitor.Lap("end");
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private T CreateInstanceOf<T>()
     {
         try
         {
-            var instanceType = _serviceProvider.GetService<T>();
-            if (_record.HasValue)
-                return (T)ActivatorUtilities.CreateInstance(_serviceProvider,instanceType!.GetType(), _record.Value.AdditionalParameters);
-            return (T)ActivatorUtilities.CreateInstance(_serviceProvider,instanceType!.GetType());
+            var parameters = _record.HasValue ? _record.Value.AdditionalParameters : [];
+            return (T)ActivatorUtilities.CreateInstance(_serviceProvider, _instanceType, parameters);
         }
-        catch
+        catch (InvalidOperationException invalidOperationException)
         {
-            // ignored
+            throw new InvalidOperationException(
+                $"""A valid constructor in type '{typeof(T).FullName}' with constructor arguments [{
+                    (_record.HasValue
+                        ? string.Join(", ", _record.Value.AdditionalParameters.Select(param => param?.GetType().FullName ?? "null"))
+                        : string.Empty
+                    )}] couldn't be found""");
+        }
+        catch (Exception e)
+        {
+            // _logger.LogError(e, "Creating instance of '{Type}' resulted in exception: {Message}", typeof(T).FullName, e.Message);
         }
 
         try // handles interfaces type or instance registered in DI container
