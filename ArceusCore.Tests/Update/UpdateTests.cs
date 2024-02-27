@@ -17,11 +17,11 @@ public class UpdateTests : IClassFixture<DatabaseFixture>
     {
 
         var userFake = new User() { Id = 1, Sso = Guid.NewGuid().ToString(), IsOnline = false};
-        var updatedRows = await _fixture.Database.NonQuery($@"
+        var updatedRows = await _fixture.Database.NonQuery(new ($@"
                              UPDATE `users` SET 
                                                 `auth_ticket` = @{nameof(User.Sso)}, 
                                                 `online` = @{nameof(User.IsOnline)} 
-                             WHERE `id` = @Id ",userFake);
+                             WHERE `id` = @Id ",[userFake]));
         
         Assert.Equal(1,updatedRows);
     }

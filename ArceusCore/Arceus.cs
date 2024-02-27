@@ -75,20 +75,18 @@ public class Arceus : IAsyncDisposable, IDisposable
     }
 
     public Task<int> NonQuery(
-        Query query,
-        object? parameters = null
+        Query query
     )
     {
-        return __non_query_internal(query, parameters);
+        return __non_query_internal(query);
     }
 
     private async Task<int> __non_query_internal(Query query,
-        object? parameters = null,
         CommandBehavior behavior = CommandBehavior.Default)
     {
         await using var cmd = _transaction.Connection!.CreateCommand();
         cmd.CommandText = query.QueryString;
-        HandleQueryParameters(parameters, cmd);
+        HandleQueryParameters(query.Parameters, cmd);
         await cmd.PrepareAsync();
         return await cmd.ExecuteNonQueryAsync();
     }
