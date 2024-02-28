@@ -130,20 +130,13 @@ public class Arceus : IAsyncDisposable, IDisposable
             {
                 HandleQueryParameters(item, cmd, depth);
             }
+
             return;
         }
-        
+
         var objectType = obj.GetType();
         foreach (var (propertyName, propertyInfo) in _cache.GetPropertiesOf(objectType))
         {
-            if (!propertyInfo.PropertyType.IsPrimitive // TODO:check if its class or interface or struct so on
-                && propertyInfo.PropertyType != typeof(string)
-               )
-            {
-                HandleQueryParameters(propertyInfo.GetValue(obj), cmd, depth);
-                continue;
-            }
-
             var parameterByColumnAttribute = cmd.CreateParameter();
             var parameterByPropertyName = cmd.CreateParameter();
             var attributes = propertyInfo.GetCustomAttributes(false);
@@ -171,12 +164,20 @@ public class Arceus : IAsyncDisposable, IDisposable
                 parameterByColumnAttribute.Value = value;
                 parameterByPropertyName.Value = value;
             }
+            else if (!propertyInfo.PropertyType.IsPrimitive // TODO:check if its class or interface or struct so on
+                     && propertyInfo.PropertyType != typeof(string)
+                    )
+            {
+                HandleQueryParameters(propertyInfo.GetValue(obj), cmd, depth);
+                continue;
+            }
             else
             {
                 var value = propertyInfo.GetValue(obj);
                 parameterByColumnAttribute.Value = value;
                 parameterByPropertyName.Value = value;
             }
+
 
             if (!string.IsNullOrEmpty(parameterByColumnAttribute.ParameterName))
                 cmd.Parameters.Add(parameterByColumnAttribute);

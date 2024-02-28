@@ -119,18 +119,10 @@ public class CmdTest
 
     private async Task Try()
     {
-        using var perfMonitor = new PerformanceMonitor(_logger);
-        var sqlReader = await _arceus.Query(
-            $@"SELECT * from `catalog_items`",
-            () => new CatalogItemData("something_test", new ComplexObjectTest("Luke"))
+        var find = new CatalogItemId(10);
+        var result = await _arceus.NonQuery(
+            new ($@"SELECT * from `catalog_items` WHERE `id` = @{nameof(CatalogItemData.Id)}", [find])
             );
-        var items = new ConcurrentBag<ICatalogItemData>();
-        foreach (var catalogItem in sqlReader)
-        {
-            items.Add(catalogItem);
-        }
-
-        var elapsed = perfMonitor.Elapsed();
-        perfMonitor.Lap("end");
+        return;
     }
 }
