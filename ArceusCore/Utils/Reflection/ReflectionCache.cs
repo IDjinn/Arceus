@@ -26,7 +26,7 @@ public class ReflectionCache
         _properties.TryAdd(type, new ConcurrentDictionary<string, PropertyInfo>());
         foreach (var propertyInfo in type.GetProperties())
         {
-            _properties[type].Add(propertyInfo.Name, propertyInfo);
+            _properties[type].TryAdd(propertyInfo.Name, propertyInfo);
         }
 
         return _properties[type];
@@ -41,11 +41,11 @@ public class ReflectionCache
             foreach (var (propertyName, propertyInfo) in properties)
             {
                 if (!_attributes[type].ContainsKey(propertyName))
-                    _attributes[type].Add(propertyName, new ConcurrentDictionary<Type, Attribute>());
+                    _attributes[type].TryAdd(propertyName, new ConcurrentDictionary<Type, Attribute>());
 
                 foreach (var customAttribute in propertyInfo.GetCustomAttributes())
                 {
-                    _attributes[type][propertyName].Add(customAttribute.GetType(), customAttribute);
+                    _attributes[type][propertyName].TryAdd(customAttribute.GetType(), customAttribute);
                 }
             }
         }
