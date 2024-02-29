@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 
@@ -7,16 +8,28 @@ namespace ArceusCore.Utils;
 public record struct PerformanceMonitor : IDisposable
 {
     private readonly ILogger? _logger;
-    private int _laps; 
-    public PerformanceMonitor(ILogger? logger = null)
+    private readonly string _prefix;
+    private int _laps;
+
+    public PerformanceMonitor(
+        ILogger? logger = null,
+        string prefix = nameof(PerformanceMonitor)
+    )
     {
         _logger = logger;
-        _logger?.LogDebug("{Monitor} started!", nameof(PerformanceMonitor));
+        if (prefix.Contains(nameof(PerformanceMonitor)))
+            _prefix = prefix;
+        else
+            _prefix = nameof(PerformanceMonitor) + ' ' + prefix;
+        _logger?.LogDebug("{Monitor} started!", prefix);
         Start = Stopwatch.GetTimestamp();
     }
 
-    [Conditional("DEBUG")]
     public void Reset() => Start = Stopwatch.GetTimestamp();
+    
+    [Conditional("DEBUG")]
+    [SuppressMessage("ReSharper", "TemplateIsNotCompileTimeConstantProblem")]
+    public void Log([ConstantExpected]string? message, params object?[] args) => _logger?.LogDebug(_prefix + ' ' + message ,args);
 
     public long Start { get; private set; }
 
@@ -26,7 +39,7 @@ public record struct PerformanceMonitor : IDisposable
     public void Dispose()
     {
         var elapsed = Elapsed();
-        _logger?.LogDebug("{Monitor} is disposed and was elapsed {TotalMilliseconds}ms", nameof(PerformanceMonitor), elapsed.TotalMilliseconds);
+        _logger?.LogDebug("{Monitor} is disposed and was elapsed {TotalMilliseconds}ms", _prefix, elapsed.TotalMilliseconds);
     }
 
     [Conditional("DEBUG")]
@@ -35,7 +48,7 @@ public record struct PerformanceMonitor : IDisposable
         var elapsed = Elapsed();
         Reset();
         _logger?.LogDebug("{Monitor} lap {LapName}({Lap}º) was elapsed {TotalMilliseconds}ms", 
-            nameof(PerformanceMonitor), 
+            _prefix, 
             name,
             ++_laps, 
             elapsed.TotalMilliseconds

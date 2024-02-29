@@ -1,6 +1,7 @@
 ﻿using System.Data;
 using System.Data.Common;
-using ArceusCore.Database.Attributtes;
+using System.Runtime.Serialization;
+using ArceusCore.Database.Attributes;
 using ArceusCore.Database.Data;
 using ArceusCore.Utils;
 using ArceusCore.Utils.Interfaces;
@@ -12,6 +13,7 @@ namespace ArceusCore;
 public class Arceus : IAsyncDisposable, IDisposable
 {
     private const int MaximumFindValueDepth = 15;
+    private readonly Guid _connectionId;
 
     private readonly ILogger<Arceus> _logger;
     private readonly DbConnection _connection;
@@ -23,79 +25,137 @@ public class Arceus : IAsyncDisposable, IDisposable
 
     public Arceus(ILogger<Arceus> logger, DbConnection connection, IServiceProvider serviceProvider, ReflectionCache cache)
     {
+        _connectionId = Guid.NewGuid();
         _logger = logger;
         _connection = connection;
         _serviceProvider = serviceProvider;
         _cache = cache;
-
+        
         _connection.Open();
         _transaction = _connection.BeginTransaction();
     }
 
-    public void Commit()
-    {
-        if (_wasCommitted)
-            throw new InvalidOperationException("Transaction was already committed in this scope.");
-        
-        _transaction.Commit();
-        _wasCommitted = true;
-    }
-
-    public void Rollback()
+    public async Task Commit(CancellationToken cancellationToken = default(CancellationToken))
     {
         if (_wasRolledBack)
+        {
+            _logger.LogError("[Connection-{ConnectionId}] - Tried to commit an already rolled back Arceus in current transaction",_connectionId);
             throw new InvalidOperationException("Transaction was already rolled back in this scope.");
+        }
         
-        _transaction.Rollback();
+        if (_wasCommitted)
+        {
+            _logger.LogError("[Connection-{ConnectionId}] - Tried to commit an already committed Arceus in current transaction", _connectionId);
+            throw new InvalidOperationException("Transaction was already committed in this scope.");
+        }
+        
+        await _transaction.CommitAsync(cancellationToken);
+        _wasCommitted = true;
+        _logger.LogDebug("[Connection-{ConnectionId}] - Committed successfully");
+    }
+
+    public async Task Rollback(CancellationToken cancellationToken = default(CancellationToken))
+    {
+        if (_wasRolledBack)
+        {
+            _logger.LogError("[Connection-{ConnectionId}] - Tried to commit an already committed Arceus in current transaction",_connectionId);
+            throw new InvalidOperationException("Transaction was already rolled back in this scope.");
+        }
+        
+        await _transaction.RollbackAsync(cancellationToken);
         _wasRolledBack = true;
+        _logger.LogDebug("[Connection-{ConnectionId}] - Rolled back successfully",_connectionId);
     }
 
     public async Task<TResult> QuerySingle<TResult>(
         Query query,
-        Func<TResult>? factory =null
-    )where TResult : new()
+        Func<TResult>? factory =null,
+        CancellationToken cancellationToken = default
+    )where TResult : new() // TODO: MAKE IT SCALAR
     {
-        return (await __query_internal(query, factory, CommandBehavior.SingleRow)).Single();
+        return (await __query_internal(query, factory, CommandBehavior.SingleRow, cancellationToken)).Single();
     }
     
     public async ValueTask<TResult?> QueryFirstOrDefault<TResult>(
         Query query,
-        Func<TResult>? factory =null
+        Func<TResult>? factory =null,
+        CancellationToken cancellationToken = default
     )where TResult : new()
-    {
-        return (await __query_internal(query, factory, CommandBehavior.SingleRow)).FirstOrDefault();
+    { // TODO: MAKE IT SCALAR
+        return (await __query_internal(query, factory, CommandBehavior.SingleRow, cancellationToken)).FirstOrDefault();
     }
 
     public Task<IEnumerable<TResult>> Query<TResult>(
         Query query,
-        Func<TResult>? factory =null
+        Func<TResult>? factory =null, CancellationToken cancellationToken = default
     )where TResult : new()
     {
-        return __query_internal(query, factory);
+        return __query_internal(query, factory, cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// Executes the command against connection, returning the number of rows affected
+    /// </summary>
+    /// <param name="query"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns>Affected Rows</returns>
     public Task<int> NonQuery(
-        Query query
+        Query query, CancellationToken cancellationToken = default
     )
     {
-        return __non_query_internal(query);
+        return __non_query_internal(query, cancellationToken);
     }
 
-    private async Task<int> __non_query_internal(Query query,
-        CommandBehavior behavior = CommandBehavior.Default)
+    public Task<int> InsertQuery(
+        Query query, CancellationToken cancellationToken = default
+    )
+    {
+        return __insert_query_internal(query, cancellationToken);
+    }
+
+    private async Task<int> __insert_query_internal(Query query, CancellationToken cancellationToken = default)
     {
         await using var cmd = _transaction.Connection!.CreateCommand();
         cmd.CommandText = query.QueryString;
         HandleQueryParameters(query.Parameters, cmd);
-        await cmd.PrepareAsync();
-        return await cmd.ExecuteNonQueryAsync();
+        await cmd.PrepareAsync(cancellationToken);
+
+        using var perfMonitor = new PerformanceMonitor(_logger, $"[{_connectionId}]");
+        perfMonitor.Log("Start query: {QueryString}", cmd.CommandText);
+        perfMonitor.Reset();
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        perfMonitor.Lap("NonQuery ran successfully");
+        await Commit(cancellationToken);
+        perfMonitor.Lap("Committed successfully");
+        var insertedId = (await __query_internal<int>("SELECT LAST_INSERT_ID()", cancellationToken: cancellationToken))
+            .First();
+        perfMonitor.Lap("Selected inserted id");
+        return insertedId;
+    }
+
+    private async Task<int> __non_query_internal(Query query,
+        CancellationToken cancellationToken = default
+        )
+    {
+        await using var cmd = _transaction.Connection!.CreateCommand();
+        cmd.CommandText = query.QueryString;
+        HandleQueryParameters(query.Parameters, cmd);
+        using var perfMonitor = new PerformanceMonitor(_logger,$"[{_connectionId}]");
+        perfMonitor.Log("Start query: {QueryString}", cmd.CommandText);
+        perfMonitor.Reset();
+        await cmd.PrepareAsync(cancellationToken);
+        perfMonitor.Lap("Prepared");
+        var affectedRows = await cmd.ExecuteNonQueryAsync(cancellationToken);
+        perfMonitor.Lap("Non query ran successfully");
+        return affectedRows;
     }
 
 
-    public async Task<IEnumerable<TResult>> __query_internal<TResult>(
+    private async Task<IEnumerable<TResult>> __query_internal<TResult>(
         Query query,
         Func<TResult>? factory = null,
-        CommandBehavior behavior = CommandBehavior.Default
+        CommandBehavior behavior = CommandBehavior.Default,
+        CancellationToken cancellationToken = default
     ) where TResult : new()
     {
         factory ??= ()=> new TResult();
@@ -103,19 +163,16 @@ public class Arceus : IAsyncDisposable, IDisposable
         await using var cmd = _transaction.Connection!.CreateCommand();
         cmd.CommandText = query.QueryString;
         HandleQueryParameters(query.Parameters, cmd);
-        await cmd.PrepareAsync();
-
-        var reader = await cmd.ExecuteReaderAsync(behavior);
+        using var perfMonitor = new PerformanceMonitor(_logger,$"[{_connectionId}]");
+        perfMonitor.Log("Start query: {QueryString}", cmd.CommandText);
+        perfMonitor.Reset();
+        await cmd.PrepareAsync(cancellationToken);
+        perfMonitor.Lap("Prepared");
+        var reader = await cmd.ExecuteReaderAsync(behavior, cancellationToken);
+        perfMonitor.Lap("Query reader ran successfully");
         return new SqlReader<TResult>(_serviceProvider,reader, query, factory)
             .ReadEnumerable();
     }
-// public ValueTask<IEnumerable<TResult>> QueryAsync<TResult>(
-//     Query query,
-//     object? parameters = null
-// )
-// {
-//     return default;
-// }
 
 
 // TODO: Implement depth checking & serialization
@@ -154,8 +211,13 @@ public class Arceus : IAsyncDisposable, IDisposable
             if (cmd.Parameters.IndexOf(parameterByColumnAttribute.ParameterName) != -1
                 || cmd.Parameters.IndexOf(parameterByPropertyName.ParameterName) != -1)
                 continue; // ignore duplicate parameters
-
-            if (attributes.OfType<ConverterAttribute>().FirstOrDefault() is { } converterAttribute)
+          
+            if (attributes.OfType<KeyAttribute>().FirstOrDefault() is { } keyAttribute)
+            {
+                if (keyAttribute.Type == KeyType.AutoIncremental)
+                    continue; // auto increment not need to make as parameter
+            }
+            else if (attributes.OfType<ConverterAttribute>().FirstOrDefault() is { } converterAttribute)
             {
                 var instance = _cache.GetInstance(converterAttribute.Type);
                 var method = _cache.GetMethod(instance, nameof(IConvertible<string, string>.Convert));
@@ -194,7 +256,10 @@ public class Arceus : IAsyncDisposable, IDisposable
         try
         {
             if (!_wasCommitted && !_wasRolledBack)
-                Rollback();
+            {
+                _logger.LogDebug("[Connection-{ConnectionId}] - Disposed transaction, was not committed or rolled back", _connectionId);
+                await Rollback();
+            }
         
             await _connection.CloseAsync();
             await CastAndDispose(_transaction);
@@ -202,6 +267,7 @@ public class Arceus : IAsyncDisposable, IDisposable
         }
         finally
         {
+            _logger.LogDebug("[Connection-{ConnectionId}] - Arceus disposed", _connectionId);
             GC.SuppressFinalize(this);
         }
         return;
@@ -220,12 +286,16 @@ public class Arceus : IAsyncDisposable, IDisposable
         try
         {
             if (!_wasCommitted && !_wasRolledBack)
-                Rollback();
+            {
+                _logger.LogDebug("[Connection-{ConnectionId}] - Disposed transaction, was not committed or rolled back",_connectionId);
+                _transaction.Rollback();
+            }
             _transaction.Dispose();
             _connection.Dispose();
         }
         finally
         {
+            _logger.LogDebug("[Connection-{ConnectionId}] - Arceus disposed",_connectionId);
             GC.SuppressFinalize(this);
         }
     }

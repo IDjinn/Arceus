@@ -5,7 +5,7 @@ using System.Data;
 using System.Data.Common;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using ArceusCore.Database.Attributtes;
+using ArceusCore.Database.Attributes;
 using ArceusCore.Utils;
 using ArceusCore.Utils.Interfaces;
 using ArceusCore.Utils.Reflection;
@@ -44,7 +44,7 @@ public class SqlReader<TResult>
         _factory = factory;
         _cache = serviceProvider.GetRequiredService<ReflectionCache>();
         _table = new Table<TResult>(100);
-        
+
         for (var i = 0; i < _reader.FieldCount; i++)
         {
             _table.AddColumn(_reader.GetName(i));
@@ -66,6 +66,14 @@ public class SqlReader<TResult>
 
     public IEnumerable<TResult> ReadEnumerable()
     {
+        if (_table.Rows.Count == 0 || _table.Rows[0]._databaseValues.Count == 0)
+            yield break;
+        
+        if (typeof(TResult).IsPrimitive)
+        {
+            yield return (TResult)Convert.ChangeType(_table.Rows[0]._databaseValues[0], typeof(TResult));
+        }
+        
         if (typeof(TResult).GetCustomAttribute<TableAttribute>() is not { } tableAttribute)
             yield break;
 

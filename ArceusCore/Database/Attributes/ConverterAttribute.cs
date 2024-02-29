@@ -1,7 +1,7 @@
 ﻿using ArceusCore.Utils.Interfaces;
 // ReSharper disable ClassNeverInstantiated.Global
 
-namespace ArceusCore.Database.Attributtes;
+namespace ArceusCore.Database.Attributes;
 
 public class ConverterAttribute : Attribute
 {

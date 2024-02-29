@@ -1,4 +1,4 @@
-﻿using ArceusCore.Database.Attributtes;
+﻿using ArceusCore.Database.Attributes;
 
 namespace ArceusCore.Tests.Console.Entities;
 

@@ -1,6 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
-using ArceusCore.Database.Attributtes;
+using ArceusCore.Database.Attributes;
 using ArceusCore.Tests.Console.Entities;
 using ArceusCore.Utils;
 using ArceusCore.Utils.Interfaces;
@@ -120,9 +120,11 @@ public class CmdTest
     private async Task Try()
     {
         var find = new CatalogItemId(10);
-        var result = await _arceus.NonQuery(
-            new ($@"SELECT * from `catalog_items` WHERE `id` = @{nameof(CatalogItemData.Id)}", [find])
-            );
+       
+        var inserted = await _arceus.InsertQuery(new Query(
+            "INSERT INTO `users_items` (user_id, item_id, is_gifted, limited_sells, limited_stack) VALUES " +
+            "(1,1,'0',0,0)",[]
+        ));
         return;
     }
 }
