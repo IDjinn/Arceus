@@ -12,7 +12,7 @@ namespace ArceusCore;
 
 public class Arceus : IAsyncDisposable, IDisposable
 {
-    private const int MaximumFindValueDepth = 15;
+    private const int MaximumFindValueDepth = 3;
     private readonly Guid _connectionId;
 
     private readonly ILogger<Arceus> _logger;
@@ -35,7 +35,7 @@ public class Arceus : IAsyncDisposable, IDisposable
         _transaction = _connection.BeginTransaction();
     }
 
-    public async Task Commit(CancellationToken cancellationToken = default(CancellationToken))
+    public async Task Commit(CancellationToken cancellationToken = default)
     {
         if (_wasRolledBack)
         {
@@ -51,10 +51,10 @@ public class Arceus : IAsyncDisposable, IDisposable
         
         await _transaction.CommitAsync(cancellationToken);
         _wasCommitted = true;
-        _logger.LogDebug("[Connection-{ConnectionId}] - Committed successfully");
+        _logger.LogDebug("[Connection-{ConnectionId}] - Committed successfully", _connectionId);
     }
 
-    public async Task Rollback(CancellationToken cancellationToken = default(CancellationToken))
+    public async Task Rollback(CancellationToken cancellationToken = default)
     {
         if (_wasRolledBack)
         {
@@ -125,8 +125,6 @@ public class Arceus : IAsyncDisposable, IDisposable
         perfMonitor.Reset();
         await cmd.ExecuteNonQueryAsync(cancellationToken);
         perfMonitor.Lap("NonQuery ran successfully");
-        await Commit(cancellationToken);
-        perfMonitor.Lap("Committed successfully");
         var insertedId = (await __query_internal<int>("SELECT LAST_INSERT_ID()", cancellationToken: cancellationToken))
             .First();
         perfMonitor.Lap("Selected inserted id");
@@ -178,76 +176,76 @@ public class Arceus : IAsyncDisposable, IDisposable
 // TODO: Implement depth checking & serialization
     private void HandleQueryParameters(object? obj, IDbCommand cmd, int depth = 0)
     {
-        if (obj is null) return;
-        if (depth++ >= MaximumFindValueDepth) return;
-
-        if (obj is object[] array)
+        try
         {
-            foreach (var item in array)
+            if (obj is null) return;
+            if (depth++ >= MaximumFindValueDepth) return;
+
+            if (obj is object[] array)
             {
-                HandleQueryParameters(item, cmd, depth);
+                foreach (var item in array)
+                {
+                    HandleQueryParameters(item, cmd, depth);
+                }
+
+                return;
             }
 
-            return;
+            var objectType = obj.GetType();
+            foreach (var (propertyName, propertyInfo) in _cache.GetPropertiesOf(objectType))
+            {
+                var parameterByColumnAttribute = cmd.CreateParameter();
+                var parameterByPropertyName = cmd.CreateParameter();
+                var attributes = propertyInfo.GetCustomAttributes(false);
+                if (attributes.OfType<ColumnAttribute>().FirstOrDefault() is { } columnAttribute)
+                {
+                    parameterByColumnAttribute.ParameterName = columnAttribute.Name;
+                }
+                else
+                {
+                    parameterByColumnAttribute.ParameterName = propertyInfo.Name;
+                }
+
+                parameterByPropertyName.ParameterName = propertyInfo.Name;
+
+                if (cmd.Parameters.IndexOf(parameterByColumnAttribute.ParameterName) != -1
+                    || cmd.Parameters.IndexOf(parameterByPropertyName.ParameterName) != -1)
+                    continue; // ignore duplicate parameters
+
+                if (attributes.OfType<KeyAttribute>().FirstOrDefault() is { } keyAttribute)
+                {
+                    if (keyAttribute.Type == KeyType.AutoIncremental)
+                        continue; // auto increment not need to make as parameter
+                } // TODO: EXCEPTIONS FOR THIS
+                else if (attributes.OfType<ConverterAttribute>().FirstOrDefault() is { } converterAttribute)
+                {
+                    var instance = _cache.GetInstance(converterAttribute.Type);
+                    var method = _cache.GetMethod(instance, nameof(IConvertible<string, string>.Convert));
+
+                    var value = method.Invoke(instance, [propertyInfo.GetValue(obj)]);
+                    parameterByColumnAttribute.Value = value;
+                    parameterByPropertyName.Value = value;
+                }
+                else
+                {
+                    var value = propertyInfo.GetValue(obj);
+                    parameterByColumnAttribute.Value = value;
+                    parameterByPropertyName.Value = value;
+                }
+
+
+                if (!string.IsNullOrEmpty(parameterByColumnAttribute.ParameterName))
+                    cmd.Parameters.Add(parameterByColumnAttribute);
+
+                if (cmd.Parameters.Contains(parameterByPropertyName.ParameterName))
+                    continue;
+
+                cmd.Parameters.Add(parameterByPropertyName);
+            }
         }
-
-        var objectType = obj.GetType();
-        foreach (var (propertyName, propertyInfo) in _cache.GetPropertiesOf(objectType))
+        catch (Exception e)
         {
-            var parameterByColumnAttribute = cmd.CreateParameter();
-            var parameterByPropertyName = cmd.CreateParameter();
-            var attributes = propertyInfo.GetCustomAttributes(false);
-            if (attributes.OfType<ColumnAttribute>().FirstOrDefault() is { } columnAttribute)
-            {
-                parameterByColumnAttribute.ParameterName = columnAttribute.Name;
-            }
-            else
-            {
-                parameterByColumnAttribute.ParameterName = propertyInfo.Name;
-            }
-
-            parameterByPropertyName.ParameterName = propertyInfo.Name;
-
-            if (cmd.Parameters.IndexOf(parameterByColumnAttribute.ParameterName) != -1
-                || cmd.Parameters.IndexOf(parameterByPropertyName.ParameterName) != -1)
-                continue; // ignore duplicate parameters
-          
-            if (attributes.OfType<KeyAttribute>().FirstOrDefault() is { } keyAttribute)
-            {
-                if (keyAttribute.Type == KeyType.AutoIncremental)
-                    continue; // auto increment not need to make as parameter
-            }
-            else if (attributes.OfType<ConverterAttribute>().FirstOrDefault() is { } converterAttribute)
-            {
-                var instance = _cache.GetInstance(converterAttribute.Type);
-                var method = _cache.GetMethod(instance, nameof(IConvertible<string, string>.Convert));
-
-                var value = method.Invoke(instance, [propertyInfo.GetValue(obj)]);
-                parameterByColumnAttribute.Value = value;
-                parameterByPropertyName.Value = value;
-            }
-            else if (!propertyInfo.PropertyType.IsPrimitive // TODO:check if its class or interface or struct so on
-                     && propertyInfo.PropertyType != typeof(string)
-                    )
-            {
-                HandleQueryParameters(propertyInfo.GetValue(obj), cmd, depth);
-                continue;
-            }
-            else
-            {
-                var value = propertyInfo.GetValue(obj);
-                parameterByColumnAttribute.Value = value;
-                parameterByPropertyName.Value = value;
-            }
-
-
-            if (!string.IsNullOrEmpty(parameterByColumnAttribute.ParameterName))
-                cmd.Parameters.Add(parameterByColumnAttribute);
-
-            if (cmd.Parameters.Contains(parameterByPropertyName.ParameterName))
-                continue;
-
-            cmd.Parameters.Add(parameterByPropertyName);
+            // ignored
         }
     }
 
