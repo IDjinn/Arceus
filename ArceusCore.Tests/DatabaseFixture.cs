@@ -11,7 +11,7 @@ public class DatabaseFixture : IAsyncDisposable
     {
         var servicesCollection = new ServiceCollection()
             .AddLogging(builder =>builder.AddConsole())
-            .AddArceus(() => new MySqlConnection("Server=127.0.0.1;Port=3306;Database=arc;Uid=root;Pwd=;AllowUserVariables=true;"));
+            .AddArceus(() => new MySqlConnection("Server=127.0.0.1;Port=3306;Database=orion;Uid=root;Pwd=;AllowUserVariables=true;"));
         
         var serviceProvider = servicesCollection.BuildServiceProvider();
         Database = serviceProvider.GetRequiredService<Arceus>();

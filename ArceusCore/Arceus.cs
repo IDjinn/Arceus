@@ -120,14 +120,9 @@ public class Arceus : IAsyncDisposable, IDisposable
         HandleQueryParameters(query.Parameters, cmd);
         await cmd.PrepareAsync(cancellationToken);
 
-        using var perfMonitor = new PerformanceMonitor(_logger, $"[{_connectionId}]");
-        perfMonitor.Log("Start query: {QueryString}", cmd.CommandText);
-        perfMonitor.Reset();
         await cmd.ExecuteNonQueryAsync(cancellationToken);
-        perfMonitor.Lap("NonQuery ran successfully");
         var insertedId = (await __query_internal<int>("SELECT LAST_INSERT_ID()", cancellationToken: cancellationToken))
             .First();
-        perfMonitor.Lap("Selected inserted id");
         return insertedId;
     }
 
@@ -138,13 +133,8 @@ public class Arceus : IAsyncDisposable, IDisposable
         await using var cmd = _transaction.Connection!.CreateCommand();
         cmd.CommandText = query.QueryString;
         HandleQueryParameters(query.Parameters, cmd);
-        using var perfMonitor = new PerformanceMonitor(_logger,$"[{_connectionId}]");
-        perfMonitor.Log("Start query: {QueryString}", cmd.CommandText);
-        perfMonitor.Reset();
         await cmd.PrepareAsync(cancellationToken);
-        perfMonitor.Lap("Prepared");
         var affectedRows = await cmd.ExecuteNonQueryAsync(cancellationToken);
-        perfMonitor.Lap("Non query ran successfully");
         return affectedRows;
     }
 
@@ -161,13 +151,8 @@ public class Arceus : IAsyncDisposable, IDisposable
         await using var cmd = _transaction.Connection!.CreateCommand();
         cmd.CommandText = query.QueryString;
         HandleQueryParameters(query.Parameters, cmd);
-        using var perfMonitor = new PerformanceMonitor(_logger,$"[{_connectionId}]");
-        perfMonitor.Log("Start query: {QueryString}", cmd.CommandText);
-        perfMonitor.Reset();
         await cmd.PrepareAsync(cancellationToken);
-        perfMonitor.Lap("Prepared");
         var reader = await cmd.ExecuteReaderAsync(behavior, cancellationToken);
-        perfMonitor.Lap("Query reader ran successfully");
         return new SqlReader<TResult>(_serviceProvider,reader, query, factory)
             .ReadEnumerable();
     }
